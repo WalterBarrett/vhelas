@@ -1,0 +1,18 @@
+# Notes
+
+## Create the venv
+
+```
+python -m venv venv
+```
+
+## Launch the venv
+
+- **Windows Command Prompt:** `venv\Scripts\activate`
+- **Powershell:** `.\venv\Scripts\Activate.ps1`
+
+## Install the preresiquites
+
+```
+pip install llama-index-core llama-index-llms-openai-like fastapi uvicorn watchdog zstandard
+```

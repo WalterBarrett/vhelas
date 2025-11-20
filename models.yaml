@@ -1,0 +1,21 @@
+deepseek-chat-v3-0324:
+  name: DeepSeek V3 0324
+  base: https://openrouter.ai/api/v1
+  model: deepseek/deepseek-chat-v3-0324
+  owner: DeepSeek
+  keychain: openrouter
+  tokenizer: DeepSeek
+deepseek-r1-0528:
+  name: DeepSeek R1 0528
+  base: https://openrouter.ai/api/v1
+  model: deepseek/deepseek-r1-0528
+  owner: DeepSeek
+  keychain: openrouter
+  tokenizer: DeepSeek
+deepseek-r1t2-chimera:
+  name: DeepSeek R1T2 Chimera
+  base: https://openrouter.ai/api/v1
+  model: tngtech/deepseek-r1t2-chimera
+  owner: TNG
+  keychain: openrouter
+  tokenizer: DeepSeek
