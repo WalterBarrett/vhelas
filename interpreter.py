@@ -150,29 +150,42 @@ class Interpreter:
         return ret
 
 
-class GlulxInterpreter(Interpreter):
-    pass
-
-
-class BocfelInterpreter(Interpreter):
+class GlulxeInterpreter(Interpreter):
     pass
 
 
 if __name__ == "__main__":
-    glulx_terp = GlulxInterpreter("C:\\Vhelas\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb")
-    output = glulx_terp.run()
-    print("Turn 0: " + json.dumps(output, indent=4))
+    def test_glulxe():
+        print("Turn 0: ")
+        glulx_terp = GlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb")
+        output = glulx_terp.run()
+        print("Contents: " + json.dumps(output, indent=4))
 
-    glulx_terp_2 = GlulxInterpreter("C:\\Vhelas\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
-        "autosave.json": output["autosave.json"],
-        "autosave.glksave": output["autosave.glksave"],
-    })
-    output_2 = glulx_terp_2.run("no")
-    print("Turn 1: " + json.dumps(output_2, indent=4))
+        print("Turn 1: ")
+        glulx_terp_2 = GlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
+            "autosave.json": output["autosave.json"],
+            "autosave.glksave": output["autosave.glksave"],
+            "filerefs": output["filerefs"],
+        })
+        output_2 = glulx_terp_2.run("no")
+        print("Contents: " + json.dumps(output_2, indent=4))
 
-    glulx_terp_3 = GlulxInterpreter("C:\\Vhelas\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
-        "autosave.json": output_2["autosave.json"],
-        "autosave.glksave": output_2["autosave.glksave"],
-    })
-    output_3 = glulx_terp_3.run("HELP")
-    print("Turn 2: " + json.dumps(output_3, indent=4))
+        print("Turn 2: ")
+        glulx_terp_3 = GlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
+            "autosave.json": output_2["autosave.json"],
+            "autosave.glksave": output_2["autosave.glksave"],
+            "filerefs": output_2["filerefs"],
+        })
+        output_3 = glulx_terp_3.run("HELP")
+        print("Contents: " + json.dumps(output_3, indent=4))
+
+        print("Turn 3: ")
+        glulx_terp_4 = GlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
+            "autosave.json": output_3["autosave.json"],
+            "autosave.glksave": output_3["autosave.glksave"],
+            "filerefs": output_3["filerefs"],
+        })
+        output_4 = glulx_terp_4.run(" ")
+        print("Contents: " + json.dumps(output_4, indent=4))
+
+    test_glulxe()
