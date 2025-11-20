@@ -61,14 +61,17 @@ class Interpreter:
             if filecontents:
                 inflate_to_file(filecontents, fileref)
 
-    def get_input_window(self) -> int:
+    def get_input_parameters(self) -> tuple[int, str]:
         if "autosave.json" in self.savedata:
             if "windows" in self.savedata["autosave.json"]:
                 windows = self.savedata["autosave.json"]["windows"]
                 for window in windows:
                     if window.get("line_request", 0) or window.get("line_request_uni", 0):
-                        return window["tag"]
-        return 0
+                        return window["tag"], "line"
+                for window in windows:
+                    if window.get("char_request", 0) or window.get("char_request_uni", 0):
+                        return window["tag"], "char"
+        return 0, "line"
 
     def get_fileref_list(self, autosavejson: list[dict]) -> list[str]:
         filerefs = autosavejson.get("filerefs", [])
@@ -104,10 +107,17 @@ class Interpreter:
         )
 
         if self.autorestore:
+            window_number, input_type = self.get_input_parameters()
+            if not input.strip():
+                match input_type:
+                    case "line":
+                        input = "wait"
+                    case "char":
+                        input = " "
             stdout, _ = process.communicate(input=json.dumps({
-                "type": "line",
+                "type": input_type,
                 "gen": self.get_generation(),
-                "window": self.get_input_window(),
+                "window": window_number,
                 "value": input,
             }))
         else:
