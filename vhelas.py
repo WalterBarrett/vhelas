@@ -92,7 +92,29 @@ def get_output(remglk: list[dict], fallback_windows: list[dict] = None):
                                 for inner in inner_content:
                                     style = inner.get("style", None)
                                     text = inner.get("text", "")
-                                    output_buffer.append(text)
+                                    match style:
+                                        case "emphasized":
+                                            output_buffer.append(f"*{text}*")
+                                        case "preformatted":
+                                            output_buffer.append(f"`{text}`")
+                                        case "header":
+                                            output_buffer.append(f"# {text}")
+                                        case "subheader":
+                                            output_buffer.append(f"## {text}")
+                                        case "alert":
+                                            output_buffer.append(f"**{text}**")
+                                        case "note":
+                                            output_buffer.append(f"*{text}*")
+                                        case "blockquote":
+                                            output_buffer.append(f"> {text}")
+                                        case "input":
+                                            output_buffer.append(f"**`{text}`**")
+                                        case "user1":
+                                            output_buffer.append(f"*{text}*")
+                                        case "user2":
+                                            output_buffer.append(f"*{text}*")
+                                        case "normal" | "unknown" | _:
+                                            output_buffer.append(text)
                             output_buffer.append("\n")
         elif type == "error":
             output_buffer.append(f"[Error: {rgo.get('message', 'Unspecified error.')}]\n")
