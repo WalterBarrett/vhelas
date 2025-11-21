@@ -90,7 +90,7 @@ class Interpreter:
             if os.path.exists(fileref):
                 os.remove(fileref)
 
-    def run(self, input: str = None) -> dict:
+    def run(self, input: str = None) -> tuple[dict, str]:
         if self.autorestore:
             self.write_savefiles()
 
@@ -143,7 +143,7 @@ class Interpreter:
 
         self.delete_savefiles(fileref_list)
 
-        return ret
+        return ret, input
 
 
 class GlulxeInterpreter(Interpreter):

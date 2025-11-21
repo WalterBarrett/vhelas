@@ -70,7 +70,7 @@ def get_variables(messages: list[str]):
     return save_data
 
 
-def get_output(remglk: list[dict], fallback_windows: list[dict] = None):
+def get_output(remglk: list[dict], input: str | None, fallback_windows: list[dict] = None):
     output_buffer = []
     for rgo in remglk:
         type = rgo.get("type", None)
@@ -108,7 +108,8 @@ def get_output(remglk: list[dict], fallback_windows: list[dict] = None):
                                         case "blockquote":
                                             output_buffer.append(f"> {text}")
                                         case "input":
-                                            output_buffer.append(f"**`{text}`**")
+                                            if text.strip() != input.strip():
+                                                output_buffer.append(f"**`{text}`**")
                                         case "user1":
                                             output_buffer.append(f"*{text}*")
                                         case "user2":
@@ -120,7 +121,7 @@ def get_output(remglk: list[dict], fallback_windows: list[dict] = None):
             output_buffer.append(f"[Error: {rgo.get('message', 'Unspecified error.')}]\n")
 
     # print(json.dumps(remglk))
-    return "".join(output_buffer)
+    return "".join(output_buffer).rstrip("> \t\n\r")
 
 
 @app.post("/v1/chat/completions", tags=["Connection Wrapper"])
@@ -132,10 +133,10 @@ def chat_completions(request: ChatRequest):
         save_data = get_variables(messages)
 
         glulxe = GlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", save_data)
-        save_data = glulxe.run(input)
+        save_data, input = glulxe.run(input)
         remglk = save_data.pop("remglk")
         autosave_json = save_data.get("autosave.json", {})
-        text = get_output(remglk, autosave_json.get("windows", {}))
+        text = get_output(remglk, input, autosave_json.get("windows", {}))
 
         result = f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->{text}"
     except Exception as e:
