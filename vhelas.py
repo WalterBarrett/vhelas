@@ -12,7 +12,7 @@ from llama_index.core.base.llms.types import MessageRole
 
 from config import ReloadHandler, get_config
 from interpreter import GlulxeInterpreter
-from models import ChatRequest
+from models import ChatMessage, ChatRequest
 from stores import get_stores, close_stores
 from utils import base64_to_dict, dict_to_base64, fnv1a_64
 
@@ -56,8 +56,9 @@ def list_models(request: Request):
     }
 
 
-def get_variables(messages: list[str]):
+def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[ChatMessage]]:
     save_data = {}
+    new_messages = []
     for message in messages:
         content = message.content
         if content:
@@ -66,8 +67,9 @@ def get_variables(messages: list[str]):
             if match:
                 captured = match.group(1)
                 save_data = base64_to_dict(stores.get("saves").pop_when_ready(captured, timeout=5))
-                new_text = re.sub(save_regex, "", content, flags=re.DOTALL)
-    return save_data
+            else:
+                new_messages.append(message)
+    return save_data, new_messages
 
 
 def get_output(remglk: list[dict], input: str | None, fallback_windows: list[dict] = None):
@@ -130,7 +132,7 @@ def chat_completions(request: ChatRequest):
         messages = request.messages
         last_message = messages[-1] if messages else {}
         input = last_message.content if last_message.role == MessageRole.USER else ""
-        save_data = get_variables(messages)
+        save_data, messages = get_variables_and_messages(messages)
 
         glulxe = GlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", save_data)
         save_data, input = glulxe.run(input)
