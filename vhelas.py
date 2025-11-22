@@ -141,7 +141,7 @@ def chat_completions(request: ChatRequest):
         autosave_json = save_data.get("autosave.json", {})
         text = get_output(remglk, input, autosave_json.get("windows", {}))
 
-        result = f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->{text}"
+        result = f"<!--SAVE:\"{dict_to_base64(save_data)}\"--><!--INPUT:\"{input}\"-->{text}"
     except Exception as e:
         return JSONResponse(content={
             "error": {
