@@ -66,7 +66,8 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
             match = re.search(save_regex, content, re.DOTALL)
             if match:
                 captured = match.group(1)
-                save_data = base64_to_dict(stores.get("saves").pop_when_ready(captured, timeout=5))
+                as_json = json.loads(captured)
+                save_data = base64_to_dict(stores.get("saves").pop_when_ready(as_json, timeout=5))
             else:
                 new_messages.append(message)
     return save_data, new_messages
