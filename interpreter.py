@@ -66,6 +66,8 @@ def get_status_from_remglk_entries(remglk: list[dict], fallback_windows: list[di
                                     new_status = [text[0:80].strip(), text[81:160].strip(), text[161:240].strip()]
                                     if status:
                                         status = [f"{status[0]}\n{new_status[0]}", f"{status[1]}\n{new_status[1]}", f"{status[2]}\n{new_status[2]}"]
+                                    else:
+                                        status = new_status
     if status:
         status = [status[0].strip(), status[1].strip(), status[2].strip()]
     return status
