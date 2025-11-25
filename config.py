@@ -7,7 +7,7 @@ import yaml
 from watchdog.events import FileSystemEventHandler
 
 
-class WrapperStore():
+class ConfigurationStore():
     def __init__(self, filename, dependents=[], validator=None):
         self.filename = filename
         self.dependents = dependents
@@ -25,7 +25,7 @@ class WrapperStore():
         return False
 
 
-class WrapperConfiguration:
+class Configuration:
     def __init__(self):
         def model_validator(model_data):
             # Remove models that require keys we don't have in the keyring
@@ -35,9 +35,11 @@ class WrapperConfiguration:
             return model_data
 
         self.stores = {
-            "settings.yaml": WrapperStore("settings.yaml"),
-            "keys.yaml": WrapperStore("keys.yaml", dependents=["models.yaml"]),
-            "models.yaml": WrapperStore("models.yaml", validator=model_validator),
+            "settings.yaml": ConfigurationStore("settings.yaml"),
+            "keys.yaml": ConfigurationStore("keys.yaml", dependents=["models.yaml"]),
+            "models.yaml": ConfigurationStore("models.yaml", validator=model_validator),
+            "games.yaml": ConfigurationStore("games.yaml"),
+            "terps.yaml": ConfigurationStore("terps.yaml"),
         }
 
         for store in self.stores.values():
@@ -63,6 +65,15 @@ class WrapperConfiguration:
 
     def get_setting(self, key: str, default: Any = None):
         return self.stores["settings.yaml"].store.get(key, default)
+
+    def get_game(self, key: str) -> dict[str, Any] | None:
+        return self.stores["games.yaml"].store.get(key, None)
+
+    def get_games(self):
+        return self.stores["games.yaml"].store.items()
+
+    def get_terp(self, key: str) -> dict[str, Any] | None:
+        return self.stores["terps.yaml"].store.get(key, None)
 
 
 class ReloadHandler(FileSystemEventHandler):
@@ -95,10 +106,10 @@ _config_lock = threading.Lock()
 _config = None
 
 
-def get_config() -> WrapperConfiguration:
+def get_config() -> Configuration:
     global _config
     if _config is None:
         with _config_lock:
             if _config is None:
-                _config = WrapperConfiguration()
+                _config = Configuration()
     return _config

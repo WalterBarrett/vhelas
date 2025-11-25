@@ -1,0 +1,6 @@
+Bocfel:
+  Path: ../remglk-terps/terps/bocfel/bocfel.exe
+  Class: RemGlkInterpreter
+Glulxe:
+  Path: ../remglk-terps/terps/glulxe/glulxe.exe
+  Class: RemGlkGlulxeInterpreter

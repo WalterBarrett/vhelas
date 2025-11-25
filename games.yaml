@@ -1,0 +1,6 @@
+Alabaster:
+  Path: ../Alabaster.gblorb
+  Interpreter: Glulxe
+Moonmist:
+  Path: ../moonmist-r13-s880501.z3
+  Interpreter: Bocfel

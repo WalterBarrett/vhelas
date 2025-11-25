@@ -10,8 +10,8 @@ from pydantic import BaseModel
 from watchdog.observers import Observer
 from llama_index.core.base.llms.types import MessageRole
 
+import interpreter as terps
 from config import ReloadHandler, get_config
-from interpreter import RemGlkGlulxeInterpreter
 from models import ChatMessage, ChatRequest
 from stores import get_stores, close_stores
 from utils import base64_to_dict, dict_to_base64, fnv1a_64
@@ -60,8 +60,11 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
     save_data = {}
     new_messages = []
     inputs = []
+    game = None
+    gamestart = None
     for message in messages:
         content = message.content
+        print(f"content: {content}")
         if not content:
             continue
         save_match = re.search(r"<!--SAVE:(.*?)-->", content, re.DOTALL)
@@ -72,17 +75,33 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
             continue
 
         def input_replacer(match):
-            captured = match.group(1)
-            as_json = json.loads(captured)
+            as_json = json.loads(match.group(1))
             if isinstance(as_json, list):
                 inputs.extend(as_json)
             else:
                 inputs.append(as_json)
             return ""
-        stripped_content = re.sub(r"<!--INPUT:(.*?)-->", input_replacer, content, flags=re.DOTALL).strip()
-        if stripped_content:
+
+        def game_replacer(match):
+            nonlocal game
+            game = json.loads(match.group(1))
+            print(f"GAME: {game}")
+            return ""
+
+        def gamestart_replacer(match):
+            nonlocal gamestart
+            gamestart = json.loads(match.group(1))
+            print(f"GAMESTART: {gamestart}")
+            return ""
+
+        content = re.sub(r"<!--GAMESTART:(.*?)-->", gamestart_replacer, content, flags=re.DOTALL).strip()
+        content = re.sub(r"<!--GAME:(.*?)-->", game_replacer, content, flags=re.DOTALL).strip()
+        content = re.sub(r"<!--INPUT:(.*?)-->", input_replacer, content, flags=re.DOTALL).strip()
+        if content:
             new_messages.append(message)
-    return save_data, new_messages, inputs
+    if not gamestart:
+        inputs = None
+    return game, save_data, new_messages, inputs
 
 
 @app.post("/v1/chat/completions", tags=["Connection Wrapper"])
@@ -91,11 +110,29 @@ def chat_completions(request: ChatRequest):
         messages = request.messages
         last_message = messages[-1] if messages else {}
         input = last_message.content if last_message.role == MessageRole.USER else ""
-        save_data, messages, inputs = get_variables_and_messages(messages)
+        game, save_data, messages, inputs = get_variables_and_messages(messages)
 
-        save_data, input, output = RemGlkGlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", messages, save_data)(input, inputs)
+        if game is None:
+            raise Exception("No game is set.")
 
-        result = f"<!--SAVE:\"{dict_to_base64(save_data)}\"--><!--INPUT:\"{input}\"-->{output}"
+        game_info = config.get_game(game)
+        print(game_info)
+        interpreter = config.get_terp(game_info["Interpreter"])
+        print(interpreter)
+        terp_class = getattr(terps, interpreter["Class"], None)
+        print(terp_class)
+        if not (terp_class and issubclass(terp_class, terps.Interpreter)):
+            raise Exception(f"\"{interpreter['Class']}\" is not a valid interpreter.")
+
+        save_data, input, output = terp_class(interpreter["Path"], game_info["Path"], messages, save_data)(input, inputs)
+
+        ret_buffer = []
+        if save_data:
+            ret_buffer.append(f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->")
+        if input is not None:
+            ret_buffer.append(f"<!--INPUT:\"{input}\"-->")
+        ret_buffer.append(output)
+        result = "".join(ret_buffer)
     except Exception as e:
         return JSONResponse(content={
             "error": {
@@ -107,6 +144,7 @@ def chat_completions(request: ChatRequest):
         }, status_code=500)
     if request.stream:
         async def stream_generator(result: str):
+            print("RESULT FOR SILLYTAVERN: ", result)
             for chunk in [
                 {"choices": [{"delta": {"content": result}}]},
                 {"choices": [{"delta": {}}], "finish_reason": "stop"}

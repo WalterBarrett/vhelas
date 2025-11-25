@@ -1,6 +1,8 @@
+import signal
 import subprocess
 import json
 import os
+import re
 from abc import ABC, abstractmethod
 from utils import deflate_to_base64, get_tmp_filename, inflate_to_file
 
@@ -23,8 +25,55 @@ def json_array_from_stdout(data: str) -> list[dict]:
     return results
 
 
-def get_output_from_remglk_entries(remglk: list[dict], input: str | None, fallback_windows: list[dict] = None):
+def get_status_window_from_glk(windows) -> int | None:
+    if windows:
+        for window in windows:
+            win_type = window.get("type", None)
+            if (win_type == "grid" or win_type == 4) and window.get("gridwidth", None) == 240 and window.get("gridheight", 0):
+                return window.get("id", window.get("tag", None))
+    return None
+
+
+def get_status_from_remglk_entries(remglk: list[dict], fallback_windows: list[dict] | None = None) -> list[str] | None:
+    # TODO: This doesn't properly handle status lines that mix styles
+    status_window = get_status_window_from_glk(fallback_windows)
+    status = None
+    last_status_rgo = None
+    for rgo in remglk:
+        type = rgo.get("type", None)
+        if type == "error":
+            continue
+        elif type == "update":
+            windows = rgo.get("windows", fallback_windows)
+            if windows:
+                new_status_window = get_status_window_from_glk(windows)
+                if new_status_window is not None:
+                    status_window = new_status_window
+            content = rgo.get("content", [])
+            if content:
+                for window in content:
+                    window_id = window.get("id", None)
+                    if window_id == status_window:
+                        for line in window.get("lines", None):
+                            inner_content = line.get("content", {})
+                            if inner_content:
+                                for inner in inner_content:
+                                    # style = inner.get("style", None)
+                                    if last_status_rgo != rgo:
+                                        status = None
+                                        last_status_rgo = rgo
+                                    text = inner.get("text", "")
+                                    new_status = [text[0:80].strip(), text[81:160].strip(), text[161:240].strip()]
+                                    if status:
+                                        status = [f"{status[0]}\n{new_status[0]}", f"{status[1]}\n{new_status[1]}", f"{status[2]}\n{new_status[2]}"]
+    if status:
+        status = [status[0].strip(), status[1].strip(), status[2].strip()]
+    return status
+
+
+def get_output_from_remglk_entries(remglk: list[dict], input: str | None, fallback_windows: list[dict] | None = None):
     output_buffer = []
+    status = get_status_from_remglk_entries(remglk, fallback_windows)
     for rgo in remglk:
         type = rgo.get("type", None)
         if type == "update":
@@ -44,37 +93,68 @@ def get_output_from_remglk_entries(remglk: list[dict], input: str | None, fallba
                             if inner_content:
                                 for inner in inner_content:
                                     style = inner.get("style", None)
-                                    text = inner.get("text", "")
+                                    innertext = inner.get("text", "")
                                     match style:
                                         case "emphasized":
-                                            output_buffer.append(f"*{text}*")
+                                            output_buffer.append(f"*{innertext}*")
                                         case "preformatted":
-                                            output_buffer.append(f"`{text}`")
+                                            output_buffer.append(f"`{innertext}`")
                                         case "header":
-                                            output_buffer.append(f"# {text}")
+                                            output_buffer.append(f"# {innertext}")
                                         case "subheader":
-                                            output_buffer.append(f"## {text}")
+                                            output_buffer.append(f"## {innertext}")
                                         case "alert":
-                                            output_buffer.append(f"**{text}**")
+                                            output_buffer.append(f"**{innertext}**")
                                         case "note":
-                                            output_buffer.append(f"*{text}*")
+                                            output_buffer.append(f"*{innertext}*")
                                         case "blockquote":
-                                            output_buffer.append(f"> {text}")
+                                            output_buffer.append(f"> {innertext}")
                                         case "input":
-                                            if text.strip() != input.strip():
-                                                output_buffer.append(f"**`{text}`**")
+                                            if input and innertext.strip() != input.strip():
+                                                output_buffer.append(f"**`{innertext}`**")
                                         case "user1":
-                                            output_buffer.append(f"*{text}*")
+                                            output_buffer.append(f"*{innertext}*")
                                         case "user2":
-                                            output_buffer.append(f"*{text}*")
+                                            output_buffer.append(f"*{innertext}*")
                                         case "normal" | "unknown" | _:
-                                            output_buffer.append(text)
+                                            output_buffer.append(innertext)
                             output_buffer.append("\n")
         elif type == "error":
             output_buffer.append(f"[Error: {rgo.get('message', 'Unspecified error.')}]\n")
 
-    # print(json.dumps(remglk))
+    if status is not None:
+        output_buffer.insert(0, f"<!--STATUS:{json.dumps(status)}-->")
+
     return "".join(output_buffer).rstrip("> \t\n\r")
+
+
+def get_input_parameters_from_glk(windows) -> tuple[int, str, int | None]:
+    """Returns input window, input method, and status window (if detected)."""
+    if windows:
+        for window in windows:
+            if window.get("line_request", 0) or window.get("line_request_uni", 0):
+                return window.get("id", window.get("tag", 0)), "line"
+        for window in windows:
+            if window.get("char_request", 0) or window.get("char_request_uni", 0):
+                return window.get("id", window.get("tag", 0)), "char"
+        for window in windows:
+            win_type = window.get("type", None)
+            if win_type == "buffer" or win_type == 3:
+                return window.get("id", window.get("tag", 0)), "line"
+    return 0, "line"
+
+
+def normalize_remglk_input(input: str, input_type: str) -> str:
+    def remove_comment(match):
+        return ""
+    input = re.sub(r"<!--(.*?)-->", remove_comment, input, flags=re.DOTALL).strip()
+    if not input.strip():
+        match input_type:
+            case "line":
+                input = "wait"
+            case "char":
+                input = " "
+    return input
 
 
 class Interpreter(ABC):
@@ -86,7 +166,7 @@ class Interpreter(ABC):
         self.savedata = savedata if savedata is not None else {}
 
     @abstractmethod
-    def __call__(self, input: str = None, previousInputs: list[str] = None) -> tuple[dict, str, str]:
+    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
         pass
 
 
@@ -124,14 +204,7 @@ class RemGlkGlulxeInterpreter(Interpreter):
 
     def _get_input_parameters(self) -> tuple[int, str]:
         if "autosave.json" in self.savedata:
-            if "windows" in self.savedata["autosave.json"]:
-                windows = self.savedata["autosave.json"]["windows"]
-                for window in windows:
-                    if window.get("line_request", 0) or window.get("line_request_uni", 0):
-                        return window["tag"], "line"
-                for window in windows:
-                    if window.get("char_request", 0) or window.get("char_request_uni", 0):
-                        return window["tag"], "char"
+            return get_input_parameters_from_glk(self.savedata["autosave.json"]["windows"])
         return 0, "line"
 
     def _get_fileref_list(self, autosavejson: list[dict]) -> list[str]:
@@ -155,7 +228,7 @@ class RemGlkGlulxeInterpreter(Interpreter):
             if os.path.exists(fileref):
                 os.remove(fileref)
 
-    def __call__(self, input: str = None, previousInputs: list[str] = None) -> tuple[dict, str, str]:
+    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
         if self.autorestore:
             self._write_savefiles()
 
@@ -168,13 +241,8 @@ class RemGlkGlulxeInterpreter(Interpreter):
         )
 
         if self.autorestore:
-            window_number, input_type = self._get_input_parameters()
-            if not input.strip():
-                match input_type:
-                    case "line":
-                        input = "wait"
-                    case "char":
-                        input = " "
+            window_number, input_type, status_window = self._get_input_parameters()
+            input = normalize_remglk_input(input, input_type)
             stdout, _ = process.communicate(input=json.dumps({
                 "type": input_type,
                 "gen": self._get_generation(),
@@ -208,7 +276,95 @@ class RemGlkGlulxeInterpreter(Interpreter):
 
         self._delete_savefiles(fileref_list)
 
-        return ret, input, get_output_from_remglk_entries(remglk, input, autosave_json.get("windows", {}))
+        final_output = get_output_from_remglk_entries(remglk, input, autosave_json.get("windows", {}))
+
+        if previousInputs is None:
+            final_output = f"<!--GAMESTART:true-->{final_output}"
+
+        return ret, input, final_output
+
+
+class RemGlkInterpreter(Interpreter):
+    """Generic RemGlk interpreter. Must re-run all provided commands to return to current the current state."""
+    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None):
+        super().__init__(path, gamename, messages, savedata)
+
+    def _wait_for_update(self, responses, current_generation: int, current_windows: dict = None) -> tuple[list[dict], int, dict]:
+        messages = []
+        windows = current_windows
+        generation = current_generation
+        for obj in responses:
+            messages.append(obj)
+            print(f"New msg: {obj}")
+            if isinstance(obj, dict) and obj.get("type") == "update":
+                for msg in messages:
+                    if "windows" in msg:
+                        windows = msg["windows"]
+                    if "gen" in msg:
+                        generation = msg["gen"]
+                        print(f"GENERATION IS NOW {generation}")
+                return messages, generation, windows
+        raise Exception("Subprocess closed unexpectedly.")
+
+    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
+        print(f"Previous inputs: {json.dumps(previousInputs)}")
+        print(f"Input: {json.dumps(input)}")
+
+        def iter_json_stream(stream):
+            decoder = json.JSONDecoder()
+            buffer = ""
+            while True:
+                chunk = stream.read(1)  # TODO: Make this streaming work better. This is absolutely churning through string allocations and JSON decodes and such.
+                # print(f"chunk: {chunk}")
+                if not chunk:
+                    break
+                buffer += chunk
+                while buffer:
+                    buffer = buffer.lstrip()
+                    try:
+                        obj, idx = decoder.raw_decode(buffer)
+                        yield obj
+                        buffer = buffer[idx:].lstrip()
+                    except json.JSONDecodeError:
+                        break  # Not enough data yet
+
+        def send_json(proc, obj):
+            msg = json.dumps(obj)
+            proc.stdin.write(msg + "\n")
+            proc.stdin.flush()
+
+        process = subprocess.Popen(
+            [self.path, "-fm", "-width", "240", "-height", "240", self.gamename],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        responses = iter_json_stream(process.stdout)
+
+        messages, generation, windows = self._wait_for_update(responses, 0)
+        if previousInputs is None:
+            return {}, None, f"<!--GAMESTART:true-->{get_output_from_remglk_entries(messages, None, windows)}"
+
+        for cmd in previousInputs + [input]:
+            window_number, input_type = get_input_parameters_from_glk(windows)
+            input = normalize_remglk_input(cmd, input_type)
+            json_thing = {
+                "type": input_type,
+                "gen": generation,
+                "window": window_number,
+                "value": input,
+            }
+            # print("SENT: ", json.dumps(json_thing))
+            send_json(process, json_thing)
+            messages, generation, windows = self._wait_for_update(responses, generation, windows)
+            # print("cmd: ", messages3)
+
+        process.send_signal(signal.SIGTERM)
+        process.wait()
+
+        return {}, input, get_output_from_remglk_entries(messages, None, windows)
 
 
 if __name__ == "__main__":
@@ -237,7 +393,7 @@ if __name__ == "__main__":
         print("Contents: " + json.dumps(output_3, indent=4))
 
         print("Turn 3: ")
-        glulx_terp_4 = RemGlkGlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
+        glulx_terp_4 = RemGlkGlulxeInterpreter("..\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
             "autosave.json": output_3["autosave.json"],
             "autosave.glksave": output_3["autosave.glksave"],
             "filerefs": output_3["filerefs"],
@@ -245,4 +401,15 @@ if __name__ == "__main__":
         output_4, _, _ = glulx_terp_4(" ")
         print("Contents: " + json.dumps(output_4, indent=4))
 
-    test_glulxe()
+    def test_bocfel():
+        save_data, input, output = RemGlkInterpreter("..\\remglk-terps\\terps\\bocfel\\bocfel.exe", "..\\moonmist-r13-s880501.z3")(None)
+        print("----------")
+        print(f"Initial output: {output}")
+        previous_commands = []
+        for cmd in ["look", "i", "x me"]:
+            print("----------")
+            save_data, input, output = RemGlkInterpreter("..\\remglk-terps\\terps\\bocfel\\bocfel.exe", "..\\moonmist-r13-s880501.z3")(cmd, previous_commands)
+            print(f"{cmd} ({input}): {output}")
+            previous_commands.append(cmd)
+
+    test_bocfel()
