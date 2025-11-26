@@ -61,46 +61,30 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
     new_messages = []
     inputs = []
     game = None
-    gamestart = None
     for message in messages:
         content = message.content
         print(f"content: {content}")
         if not content:
             continue
-        save_match = re.search(r"<!--SAVE:(.*?)-->", content, re.DOTALL)
-        if save_match:
-            captured = save_match.group(1)
-            as_json = json.loads(captured)
-            save_data = base64_to_dict(stores.get("saves").pop_when_ready(as_json, timeout=5))
-            continue
-
-        def input_replacer(match):
-            as_json = json.loads(match.group(1))
-            if isinstance(as_json, list):
-                inputs.extend(as_json)
+        data_match = re.search(r"<!--DATA:(.*?)-->", content, re.DOTALL)
+        if data_match:
+            captured = data_match.group(1)
+            data_json = json.loads(captured)
+            save_hash = data_json.get("save", None)
+            if save_hash:
+                save_data = base64_to_dict(stores.get("saves").pop_when_ready(save_hash, timeout=5))
             else:
-                inputs.append(as_json)
-            return ""
-
-        def game_replacer(match):
-            nonlocal game
-            game = json.loads(match.group(1))
-            print(f"GAME: {game}")
-            return ""
-
-        def gamestart_replacer(match):
-            nonlocal gamestart
-            gamestart = json.loads(match.group(1))
-            print(f"GAMESTART: {gamestart}")
-            return ""
-
-        content = re.sub(r"<!--GAMESTART:(.*?)-->", gamestart_replacer, content, flags=re.DOTALL).strip()
-        content = re.sub(r"<!--GAME:(.*?)-->", game_replacer, content, flags=re.DOTALL).strip()
-        content = re.sub(r"<!--INPUT:(.*?)-->", input_replacer, content, flags=re.DOTALL).strip()
-        if content:
-            new_messages.append(message)
-    if not gamestart:
-        inputs = None
+                save_data = None
+            game = data_json.get("game", None)
+            inputs_hash = data_json.get("inputs", None)
+            if inputs_hash:
+                print(f"Getting input from hash {inputs_hash}...")
+                inputs = stores.get("inputs").pop_when_ready(inputs_hash, timeout=5)
+                print(f"Got input {inputs} from hash {inputs_hash}...")
+            else:
+                inputs = None
+            continue
+        new_messages.append(message)
     return game, save_data, new_messages, inputs
 
 
@@ -167,21 +151,28 @@ def chat_completions(request: ChatRequest):
         return JSONResponse(content=response)
 
 
-class SavePackage(BaseModel):
-    save_data: str
+class StorePackage(BaseModel):
+    data: str
     hash: str
 
 
-@app.post("/v1/save", tags=["Interactive Fiction Player"])
-def post_save(package: SavePackage):
+@app.post("/v1/vhelas/{store}", tags=["Interactive Fiction Player"])
+def post_vhelas_store(store: str, package: StorePackage):
     try:
-        save_data = package.save_data
+        match store:
+            case "save" | "input":
+                pass
+            case _:
+                raise Exception(f"Invalid store \"{store}\".")
+        data = package.data
         reported_fnv1a_hash = package.hash
-        calculated_fnv1a_hash = str(fnv1a_64(save_data))
+        calculated_fnv1a_hash = str(fnv1a_64(data))
         if reported_fnv1a_hash == calculated_fnv1a_hash:
-            stores.get("saves").set(calculated_fnv1a_hash, save_data)
+            if store != "save":
+                data = json.loads(data)
+            stores.get(f"{store}s").set(calculated_fnv1a_hash, data)
         else:
-            print(f"Reported hash of {reported_fnv1a_hash} doesn't match actual hash of {calculated_fnv1a_hash}. Rejecting save file.")
+            print(f"Reported hash of {reported_fnv1a_hash} doesn't match actual hash of {calculated_fnv1a_hash}. Rejecting {store} file.")
     except Exception as e:
         return JSONResponse(content={
             "error": {

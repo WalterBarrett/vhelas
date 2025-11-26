@@ -163,6 +163,7 @@ def get_stores() -> PersistentDataStoreManager:
             if _pds is None:
                 _pds = PersistentDataStoreManager({
                     "saves": PersistentDataStore("saves", timetolive=timedelta(minutes=10)),
+                    "inputs": PersistentDataStore("inputs", timetolive=timedelta(minutes=10)),
                 })
     return _pds
 
