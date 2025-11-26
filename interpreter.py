@@ -35,7 +35,7 @@ def get_status_window_from_glk(windows) -> int | None:
 
 
 def get_status_from_remglk_entries(remglk: list[dict], fallback_windows: list[dict] | None = None) -> list[str] | None:
-    # TODO: This doesn't properly handle status lines that mix styles
+    # TODO: This doesn't properly handle status lines that mix styles (not that I have any examples at hand)
     status_window = get_status_window_from_glk(fallback_windows)
     status = None
     last_status_rgo = None
@@ -297,27 +297,21 @@ class RemGlkInterpreter(Interpreter):
         generation = current_generation
         for obj in responses:
             messages.append(obj)
-            print(f"New msg: {obj}")
             if isinstance(obj, dict) and obj.get("type") == "update":
                 for msg in messages:
                     if "windows" in msg:
                         windows = msg["windows"]
                     if "gen" in msg:
                         generation = msg["gen"]
-                        print(f"GENERATION IS NOW {generation}")
                 return messages, generation, windows
         raise Exception("Subprocess closed unexpectedly.")
 
     def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
-        print(f"Previous inputs: {json.dumps(previousInputs)}")
-        print(f"Input: {json.dumps(input)}")
-
         def iter_json_stream(stream):
             decoder = json.JSONDecoder()
             buffer = ""
             while True:
                 chunk = stream.read(1)  # TODO: Make this streaming work better. This is absolutely churning through string allocations and JSON decodes and such.
-                # print(f"chunk: {chunk}")
                 if not chunk:
                     break
                 buffer += chunk
@@ -358,60 +352,10 @@ class RemGlkInterpreter(Interpreter):
                 "window": window_number,
                 "value": input,
             }
-            # print("SENT: ", json.dumps(json_thing))
             send_json(process, json_thing)
             messages, generation, windows = self._wait_for_update(responses, generation, windows)
-            # print("cmd: ", messages3)
 
         process.send_signal(signal.SIGTERM)
         process.wait()
 
         return {}, input, get_output_from_remglk_entries(messages, None, windows)
-
-
-if __name__ == "__main__":
-    def test_glulxe():
-        print("Turn 0: ")
-        glulx_terp = RemGlkGlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb")
-        output, _, _ = glulx_terp()
-        print("Contents: " + json.dumps(output, indent=4))
-
-        print("Turn 1: ")
-        glulx_terp_2 = RemGlkGlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
-            "autosave.json": output["autosave.json"],
-            "autosave.glksave": output["autosave.glksave"],
-            "filerefs": output["filerefs"],
-        })
-        output_2, _, _ = glulx_terp_2("no")
-        print("Contents: " + json.dumps(output_2, indent=4))
-
-        print("Turn 2: ")
-        glulx_terp_3 = RemGlkGlulxeInterpreter("C:\\Vhelas\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
-            "autosave.json": output_2["autosave.json"],
-            "autosave.glksave": output_2["autosave.glksave"],
-            "filerefs": output_2["filerefs"],
-        })
-        output_3, _, _ = glulx_terp_3("HELP")
-        print("Contents: " + json.dumps(output_3, indent=4))
-
-        print("Turn 3: ")
-        glulx_terp_4 = RemGlkGlulxeInterpreter("..\\remglk-terps\\terps\\glulxe\\glulxe.exe", "..\\Alabaster.gblorb", {
-            "autosave.json": output_3["autosave.json"],
-            "autosave.glksave": output_3["autosave.glksave"],
-            "filerefs": output_3["filerefs"],
-        })
-        output_4, _, _ = glulx_terp_4(" ")
-        print("Contents: " + json.dumps(output_4, indent=4))
-
-    def test_bocfel():
-        save_data, input, output = RemGlkInterpreter("..\\remglk-terps\\terps\\bocfel\\bocfel.exe", "..\\moonmist-r13-s880501.z3")(None)
-        print("----------")
-        print(f"Initial output: {output}")
-        previous_commands = []
-        for cmd in ["look", "i", "x me"]:
-            print("----------")
-            save_data, input, output = RemGlkInterpreter("..\\remglk-terps\\terps\\bocfel\\bocfel.exe", "..\\moonmist-r13-s880501.z3")(cmd, previous_commands)
-            print(f"{cmd} ({input}): {output}")
-            previous_commands.append(cmd)
-
-    test_bocfel()

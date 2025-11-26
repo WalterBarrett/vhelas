@@ -63,7 +63,6 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
     game = None
     for message in messages:
         content = message.content
-        print(f"content: {content}")
         if not content:
             continue
         data_match = re.search(r"<!--DATA:(.*?)-->", content, re.DOTALL)
@@ -78,9 +77,7 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
             game = data_json.get("game", None)
             inputs_hash = data_json.get("inputs", None)
             if inputs_hash:
-                print(f"Getting input from hash {inputs_hash}...")
                 inputs = stores.get("inputs").pop_when_ready(inputs_hash, timeout=5)
-                print(f"Got input {inputs} from hash {inputs_hash}...")
             else:
                 inputs = None
             continue
@@ -100,11 +97,8 @@ def chat_completions(request: ChatRequest):
             raise Exception("No game is set.")
 
         game_info = config.get_game(game)
-        print(game_info)
         interpreter = config.get_terp(game_info["Interpreter"])
-        print(interpreter)
         terp_class = getattr(terps, interpreter["Class"], None)
-        print(terp_class)
         if not (terp_class and issubclass(terp_class, terps.Interpreter)):
             raise Exception(f"\"{interpreter['Class']}\" is not a valid interpreter.")
 
@@ -128,7 +122,6 @@ def chat_completions(request: ChatRequest):
         }, status_code=500)
     if request.stream:
         async def stream_generator(result: str):
-            print("RESULT FOR SILLYTAVERN: ", result)
             for chunk in [
                 {"choices": [{"delta": {"content": result}}]},
                 {"choices": [{"delta": {}}], "finish_reason": "stop"}
@@ -172,7 +165,7 @@ def post_vhelas_store(store: str, package: StorePackage):
                 data = json.loads(data)
             stores.get(f"{store}s").set(calculated_fnv1a_hash, data)
         else:
-            print(f"Reported hash of {reported_fnv1a_hash} doesn't match actual hash of {calculated_fnv1a_hash}. Rejecting {store} file.")
+            raise Exception(f"Reported hash of {reported_fnv1a_hash} doesn't match actual hash of {calculated_fnv1a_hash}. Rejecting {store} file.")
     except Exception as e:
         return JSONResponse(content={
             "error": {
