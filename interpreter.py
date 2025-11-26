@@ -243,7 +243,7 @@ class RemGlkGlulxeInterpreter(Interpreter):
         )
 
         if self.autorestore:
-            window_number, input_type, status_window = self._get_input_parameters()
+            window_number, input_type = self._get_input_parameters()
             input = normalize_remglk_input(input, input_type)
             stdout, _ = process.communicate(input=json.dumps({
                 "type": input_type,
