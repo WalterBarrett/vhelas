@@ -161,11 +161,12 @@ def normalize_remglk_input(input: str, input_type: str) -> str:
 
 class Interpreter(ABC):
     """Interactive Fiction interpreter."""
-    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None):
+    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None, extraargs: list[str] = None):
         self.path = path
         self.gamename = gamename
         self.messages = messages if messages is not None else []
         self.savedata = savedata if savedata is not None else {}
+        self.extraargs = extraargs if extraargs is not None else []
 
     @abstractmethod
     def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
@@ -174,8 +175,8 @@ class Interpreter(ABC):
 
 class RemGlkGlulxeInterpreter(Interpreter):
     """RemGlk-Glulxe interpreter. Uses autosaves to maintain VM state across messages."""
-    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None):
-        super().__init__(path, gamename, messages, savedata)
+    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None, extraargs: list[str] = None):
+        super().__init__(path, gamename, messages, savedata, extraargs)
         self.savename = get_tmp_filename()
         self.autorestore = "autosave.json" in self.savedata
 
@@ -190,6 +191,8 @@ class RemGlkGlulxeInterpreter(Interpreter):
         # For some reason, -stderr doesn't seem to work correctly.
         if self.autorestore:
             args.append("--autorestore")
+        if self.extraargs:
+            args.extend(self.extraargs)
         args.append(self.gamename)
         return args
 
@@ -288,8 +291,16 @@ class RemGlkGlulxeInterpreter(Interpreter):
 
 class RemGlkInterpreter(Interpreter):
     """Generic RemGlk interpreter. Must re-run all provided commands to return to current the current state."""
-    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None):
-        super().__init__(path, gamename, messages, savedata)
+    def __init__(self, path: str, gamename: str, messages: list[dict] = None, savedata: dict = None, extraargs: list[str] = None):
+        super().__init__(path, gamename, messages, savedata, extraargs)
+
+    def _get_parameters(self) -> list[str]:
+        args = [self.path, "-fm", "-width", "240", "-height", "240"]
+        # For some reason, -stderr doesn't seem to work correctly.
+        if self.extraargs:
+            args.extend(self.extraargs)
+        args.append(self.gamename)
+        return args
 
     def _wait_for_update(self, responses, current_generation: int, current_windows: dict = None) -> tuple[list[dict], int, dict]:
         messages = []
@@ -330,7 +341,7 @@ class RemGlkInterpreter(Interpreter):
             proc.stdin.flush()
 
         process = subprocess.Popen(
-            [self.path, "-fm", "-width", "240", "-height", "240", self.gamename],
+            self._get_parameters(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

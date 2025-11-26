@@ -102,7 +102,7 @@ def chat_completions(request: ChatRequest):
         if not (terp_class and issubclass(terp_class, terps.Interpreter)):
             raise Exception(f"\"{interpreter['Class']}\" is not a valid interpreter.")
 
-        save_data, input, output = terp_class(interpreter["Path"], game_info["Path"], messages, save_data)(input, inputs)
+        save_data, input, output = terp_class(interpreter["Path"], game_info["Path"], messages, save_data, interpreter.get("ExtraArgs", None))(input, inputs)
 
         ret_buffer = []
         if save_data:
