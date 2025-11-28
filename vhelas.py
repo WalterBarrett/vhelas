@@ -14,7 +14,7 @@ import interpreter as terps
 from config import ReloadHandler, get_config
 from models import ChatMessage, ChatRequest
 from stores import get_stores, close_stores
-from utils import base64_to_dict, dict_to_base64, fnv1a_64
+from utils import base64_to_dict, dict_to_base64, fnv1a_64, natural_join
 
 config = get_config()
 stores = get_stores()
@@ -175,6 +175,86 @@ def post_vhelas_store(store: str, package: StorePackage):
                 "code": "500"
             }
         }, status_code=500)
+
+
+def get_author_line(author: str | None, authors: list[str] | None) -> str:
+    if not author and not authors:
+        return "Not Specified"
+    if not author and authors:
+        return natural_join(authors)
+    if author and authors:
+        return f"{author} ({natural_join(authors)})"
+    return author
+
+
+@app.get("/v1/vhelas/games", tags=["Interactive Fiction Player"])
+def list_games():
+    game_list = {}
+    for game_id, game_info in config.get_games():
+        name = game_info.get("Name", game_id)
+        author = game_info.get("Author", None)
+        authors = game_info.get("Authors", [])
+        description = game_info.get("Description", "No description provided.")
+        cover = game_info.get("Cover", "")
+        game_list[game_id] = {
+
+            "name": name,
+            "author": get_author_line(author, authors),
+            "description": description,
+            "cover": cover,
+        }
+    return game_list
+
+
+@app.get("/v1/vhelas/games/{game_id}", tags=["Interactive Fiction Player"])
+def get_game_character_card(game_id: str):
+    game_info = config.get_game(game_id)
+    name = game_info.get("Name", game_id).replace("/", "\u2215").replace(":", "\uA789")
+    author = game_info.get("Author", None)
+    authors = game_info.get("Authors", [])
+    description = game_info.get("Description", "No description provided.")
+    cover = game_info.get("Cover", "")
+
+    interpreter = config.get_terp(game_info["Interpreter"])
+    terp_class = getattr(terps, interpreter["Class"], None)
+    if not (terp_class and issubclass(terp_class, terps.Interpreter)):
+        raise Exception(f"\"{interpreter['Class']}\" is not a valid interpreter.")
+
+    save_data, _, output = terp_class(interpreter["Path"], game_info["Path"], [], None, interpreter.get("ExtraArgs", None))(None, None)
+
+    ret_buffer = [f"<!--GAME:\"{game_id}\"-->"]
+    if save_data:
+        ret_buffer.append(f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->")
+    ret_buffer.append(output)
+
+    first_mes = "".join(ret_buffer)
+
+    return {
+        "spec": "chara_card_v2",
+        "spec_version": "2.0",
+        "data": {
+            "name": name,
+            "description": "",
+            "personality": "",
+            "first_mes": first_mes,
+            "avatar": cover,
+            "mes_example": "",
+            "scenario": "",
+            "creator_notes": description,
+            "system_prompt": "",
+            "post_history_instructions": "",
+            "alternate_greetings": [],
+            "tags": [
+                "Interactive Fiction",
+            ],
+            "creator": get_author_line(author, authors),
+            "character_version": "main",
+            "extensions": {
+                "vhelas_game": game_id
+            },
+            "character_book": None,
+        }
+    }
 
 
 if __name__ == "__main__":

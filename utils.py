@@ -40,3 +40,14 @@ def fnv1a_64(s: str) -> int:
         hash_val ^= byte
         hash_val = (hash_val * fnv_prime) % (1 << 64)
     return hash_val
+
+
+def natural_join(items):
+    items = list(items)
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    if len(items) == 2:
+        return " and ".join(items)
+    return ", ".join(items[:-1]) + ", and " + items[-1]
