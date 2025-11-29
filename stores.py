@@ -47,7 +47,7 @@ class PersistentDataStore:
         self._closed = False
         try:
             if os.path.exists(self.path):
-                with open(self.path, "r") as f:
+                with open(self.path, "r", encoding="utf-8") as f:
                     self._store = decode_with_prefix(json.load(f))
         except Exception:
             pass

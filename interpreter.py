@@ -198,7 +198,7 @@ class RemGlkGlulxeInterpreter(Interpreter):
 
     def _write_savefiles(self) -> None:
         if "autosave.json" in self.savedata:
-            with open(f"{self.savename}.json", "w") as f:
+            with open(f"{self.savename}.json", "w", encoding="utf-8") as f:
                 f.write(json.dumps(self.savedata["autosave.json"]))
         if "autosave.glksave" in self.savedata:
             inflate_to_file(self.savedata["autosave.glksave"], f"{self.savename}.glksave")
@@ -260,7 +260,7 @@ class RemGlkGlulxeInterpreter(Interpreter):
         if process.returncode != 0:
             raise RuntimeError(f"Process \"{' '.join(self._get_parameters())}\" failed: {stdout.strip()}")
 
-        with open(f"{self.savename}.json", "r") as f:
+        with open(f"{self.savename}.json", "r", encoding="utf-8") as f:
             autosave_json = json.load(f)
         autosave_glksave = deflate_to_base64(f"{self.savename}.glksave")
 

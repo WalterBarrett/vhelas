@@ -15,7 +15,7 @@ class ConfigurationStore():
         self.store = {}
 
     def load(self):
-        with open(self.filename, "r") as f:
+        with open(self.filename, "r", encoding="utf-8") as f:
             tmp = yaml.safe_load(f)
             if tmp and self.validator:
                 tmp = self.validator(tmp)
