@@ -1,9 +1,10 @@
-import signal
-import subprocess
 import json
 import os
 import re
+import signal
+import subprocess
 from abc import ABC, abstractmethod
+
 from utils import deflate_to_base64, get_tmp_filename, inflate_to_file
 
 

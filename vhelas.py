@@ -1,19 +1,19 @@
-from contextlib import asynccontextmanager
-
 import json
 import re
 import uuid
+from contextlib import asynccontextmanager
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from llama_index.core.base.llms.types import MessageRole
 from pydantic import BaseModel
 from watchdog.observers import Observer
-from llama_index.core.base.llms.types import MessageRole
 
 import interpreter as terps
 from config import ReloadHandler, get_config
 from models import ChatMessage, ChatRequest
-from stores import get_stores, close_stores
+from stores import close_stores, get_stores
 from utils import base64_to_dict, dict_to_base64, fnv1a_64, natural_join
 
 config = get_config()
