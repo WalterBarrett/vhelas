@@ -93,6 +93,38 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[str, dict, 
     return game, save_data, new_messages, inputs, settings
 
 
+def parser_strip(input: str):
+    return input.strip(" \t\n\r\f\v.!?")
+
+
+rules_based_parser_remaps = {
+    "take inventory": "inventory",
+    "look around": "look",
+
+    "head north": "north",
+    "head northeast": "north",
+    "head east": "east",
+    "head southeast": "east",
+    "head south": "south",
+    "head southwest": "west",
+    "head west": "west",
+    "head northwest": "south",
+    "head up": "up",
+    "head down": "down",
+
+    "head northwards": "north",
+    "head northeastwards": "north",
+    "head eastwards": "east",
+    "head southeastwards": "east",
+    "head southwards": "south",
+    "head southwestwards": "west",
+    "head westwards": "west",
+    "head northwestwards": "south",
+    "head upwards": "up",
+    "head downwards": "down",
+}
+
+
 @app.post("/v1/chat/completions", tags=["Connection Wrapper"])
 def chat_completions(req: ChatRequest, request: Request):
     try:
@@ -109,7 +141,12 @@ def chat_completions(req: ChatRequest, request: Request):
             case "disabled":
                 pass
             case "rules":
-                input = removeprefix_ci(input, "i ").strip()
+                input = parser_strip(removeprefix_ci(input, "i "))
+                input_lower = input.lower()
+                for orig, remap in rules_based_parser_remaps.items():
+                    if input_lower == orig:
+                        input = remap
+                        break
             case _:
                 warnings.append(f"Setting \"parser_augmentation\" was set to \"{settings['parser_augmentation']}\", which is not yet implemented.")
 
