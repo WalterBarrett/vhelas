@@ -7,14 +7,17 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from llama_index.core.base.llms.types import MessageRole
+from llama_index.core.llms import ChatMessage
 from pydantic import BaseModel
 from watchdog.observers import Observer
 
 import interpreter as terps
 from config import ReloadHandler, get_config
-from models import ChatMessage, ChatRequest
+from llm import rewrite_latest_message
+from models import ChatRequest
 from stores import close_stores, get_stores
-from utils import base64_to_dict, dict_to_base64, fnv1a_64, natural_join
+from utils import (base64_to_dict, dict_to_base64, fnv1a_64, natural_join,
+                   removeprefix_ci)
 
 config = get_config()
 stores = get_stores()
@@ -56,11 +59,12 @@ def list_models(request: Request):
     }
 
 
-def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[ChatMessage]]:
+def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[str, dict, list[ChatMessage], list[str], dict]:
     save_data = {}
     new_messages = []
     inputs = []
     game = None
+    settings = {}
     for message in messages:
         content = message.content
         if not content:
@@ -75,6 +79,10 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
             else:
                 save_data = None
             game = data_json.get("game", None)
+            settings = {
+                "parser_augmentation": data_json.get("parser_aug", "disabled"),
+                "output_augmentation": data_json.get("output_aug", "disabled"),
+            }
             inputs_hash = data_json.get("inputs", None)
             if inputs_hash:
                 inputs = stores.get("inputs").pop_when_ready(inputs_hash, timeout=5)
@@ -82,19 +90,28 @@ def get_variables_and_messages(messages: list[ChatMessage]) -> tuple[dict, list[
                 inputs = None
             continue
         new_messages.append(message)
-    return game, save_data, new_messages, inputs
+    return game, save_data, new_messages, inputs, settings
 
 
 @app.post("/v1/chat/completions", tags=["Connection Wrapper"])
-def chat_completions(request: ChatRequest):
+def chat_completions(req: ChatRequest, request: Request):
     try:
-        messages = request.messages
+        messages = req.messages
         last_message = messages[-1] if messages else {}
-        input = last_message.content if last_message.role == MessageRole.USER else ""
-        game, save_data, messages, inputs = get_variables_and_messages(messages)
+        input = last_message.content.strip() if last_message.role == MessageRole.USER else ""
+        game, save_data, messages, inputs, settings = get_variables_and_messages(messages)
+        warnings = []
 
         if game is None:
             raise Exception("No game is set.")
+
+        match settings["parser_augmentation"]:
+            case "disabled":
+                pass
+            case "rules":
+                input = removeprefix_ci(input, "i ").strip()
+            case _:
+                warnings.append(f"Setting \"parser_augmentation\" was set to \"{settings['parser_augmentation']}\", which is not yet implemented.")
 
         game_info = config.get_game(game)
         interpreter = config.get_terp(game_info["Interpreter"])
@@ -102,13 +119,27 @@ def chat_completions(request: ChatRequest):
         if not (terp_class and issubclass(terp_class, terps.Interpreter)):
             raise Exception(f"\"{interpreter['Class']}\" is not a valid interpreter.")
 
-        save_data, input, output = terp_class(interpreter["Path"], game_info["Path"], messages, save_data, interpreter.get("ExtraArgs", None))(input, inputs)
+        save_data, input, output, variables = terp_class(interpreter["Path"], game_info["Path"], messages, save_data, interpreter.get("ExtraArgs", None))(input, inputs)
+        thinking = None
+
+        match settings["output_augmentation"]:
+            case "disabled":
+                pass
+            case "rewrite":
+                thinking = output
+                output = rewrite_latest_message(output, messages, req.model, req.max_tokens, request)
+            case _:
+                warnings.append(f"Setting \"output_augmentation\" was set to \"{settings['output_augmentation']}\", which is not yet implemented.")
 
         ret_buffer = []
+        if variables:
+            ret_buffer.append(variables)
         if save_data:
             ret_buffer.append(f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->")
         if input is not None:
             ret_buffer.append(f"<!--INPUT:\"{input}\"-->")
+        for warning in warnings:
+            ret_buffer.append(f"[Warning: {warning}]\n\n")
         ret_buffer.append(output)
         result = "".join(ret_buffer)
     except Exception as e:
@@ -120,16 +151,31 @@ def chat_completions(request: ChatRequest):
                 "code": "500"
             }
         }, status_code=500)
-    if request.stream:
-        async def stream_generator(result: str):
-            for chunk in [
-                {"choices": [{"delta": {"content": result}}]},
-                {"choices": [{"delta": {}}], "finish_reason": "stop"}
-            ]:
+    if req.stream:
+        async def stream_generator(result: str, thinking: str):
+            chunks = []
+            if thinking:
+                chunks.append({
+                    "choices": [{
+                        "delta": {
+                            "reasoning": thinking,
+                            "reasoning_details": [{
+                                "type": "reasoning.text",
+                                "text": thinking,
+                                "format": "unknown",
+                                "index": 0
+                            }]
+                        }
+                    }]
+                })
+            chunks.append({"choices": [{"delta": {"content": result}}]})
+            chunks.append({"choices": [{"delta": {}}], "finish_reason": "stop"})
+            for chunk in chunks:
                 yield f"data: {json.dumps(chunk)}\n\n"
             yield "data: [DONE]\n\n"
-        return StreamingResponse(stream_generator(result), media_type="text/event-stream")
+        return StreamingResponse(stream_generator(result, thinking), media_type="text/event-stream")
     else:  # Non-streaming response
+        # TODO: Return reasoning chunk if applicable.
         response = {
             "id": f"chatcmpl-{uuid.uuid4().hex}",
             "object": "chat.completion",
@@ -220,9 +266,11 @@ def get_game_character_card(game_id: str):
     if not (terp_class and issubclass(terp_class, terps.Interpreter)):
         raise Exception(f"\"{interpreter['Class']}\" is not a valid interpreter.")
 
-    save_data, _, output = terp_class(interpreter["Path"], game_info["Path"], [], None, interpreter.get("ExtraArgs", None))(None, None)
+    save_data, _, output, variables = terp_class(interpreter["Path"], game_info["Path"], [], None, interpreter.get("ExtraArgs", None))(None, None)
 
     ret_buffer = [f"<!--GAME:\"{game_id}\"-->"]
+    if variables:
+        ret_buffer.append(variables)
     if save_data:
         ret_buffer.append(f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->")
     ret_buffer.append(output)

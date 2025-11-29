@@ -1,0 +1,12 @@
+StopStrings:
+  - "### Input"
+  - "### Response"
+  - "### Final Response"
+  - "<｜end▁of▁sentence｜>"
+  - "[/INST]"
+RetryCount: 5
+CooldownDefault: 0.2
+CooldownRecoveryMultiplier: 0.0
+CooldownMax: 16.0
+WrapperDisplayURI: "https://sillytavern.app"
+WrapperDisplayTitle: SillyTavern

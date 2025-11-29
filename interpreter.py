@@ -74,7 +74,7 @@ def get_status_from_remglk_entries(remglk: list[dict], fallback_windows: list[di
     return status
 
 
-def get_output_from_remglk_entries(remglk: list[dict], input: str | None, fallback_windows: list[dict] | None = None):
+def get_output_from_remglk_entries(remglk: list[dict], input: str | None, fallback_windows: list[dict] | None = None) -> tuple[str, str | None]:
     output_buffer = []
     status = get_status_from_remglk_entries(remglk, fallback_windows)
     for rgo in remglk:
@@ -126,9 +126,9 @@ def get_output_from_remglk_entries(remglk: list[dict], input: str | None, fallba
             output_buffer.append(f"[Error: {rgo.get('message', 'Unspecified error.')}]\n")
 
     if status is not None:
-        output_buffer.insert(0, f"<!--STATUS:{json.dumps(status)}-->")
+        status = f"<!--STATUS:{json.dumps(status)}-->"
 
-    return "".join(output_buffer).rstrip("> \t\n\r")
+    return "".join(output_buffer).rstrip("> \t\n\r"), status
 
 
 def get_input_parameters_from_glk(windows) -> tuple[int, str, int | None]:
@@ -170,7 +170,7 @@ class Interpreter(ABC):
         self.extraargs = extraargs if extraargs is not None else []
 
     @abstractmethod
-    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
+    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str, str | None]:
         pass
 
 
@@ -234,7 +234,7 @@ class RemGlkGlulxeInterpreter(Interpreter):
             if os.path.exists(fileref):
                 os.remove(fileref)
 
-    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
+    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str, str | None]:
         if self.autorestore:
             self._write_savefiles()
 
@@ -282,12 +282,12 @@ class RemGlkGlulxeInterpreter(Interpreter):
 
         self._delete_savefiles(fileref_list)
 
-        final_output = get_output_from_remglk_entries(remglk, input, autosave_json.get("windows", {}))
+        final_output, status_output = get_output_from_remglk_entries(remglk, input, autosave_json.get("windows", {}))
 
         if previousInputs is None:
             final_output = f"<!--GAMESTART:true-->{final_output}"
 
-        return ret, input, final_output
+        return ret, input, final_output, status_output
 
 
 class RemGlkInterpreter(Interpreter):
@@ -318,7 +318,7 @@ class RemGlkInterpreter(Interpreter):
                 return messages, generation, windows
         raise Exception("Subprocess closed unexpectedly.")
 
-    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str]:
+    def __call__(self, input: str = None, previousInputs: list[str] | None = None) -> tuple[dict, str, str, str | None]:
         def iter_json_stream(stream):
             decoder = json.JSONDecoder()
             buffer = ""
@@ -353,7 +353,8 @@ class RemGlkInterpreter(Interpreter):
 
         messages, generation, windows = self._wait_for_update(responses, 0)
         if previousInputs is None:
-            return {}, None, f"<!--GAMESTART:true-->{get_output_from_remglk_entries(messages, None, windows)}"
+            output, status = get_output_from_remglk_entries(messages, None, windows)
+            return {}, None, output, f"<!--GAMESTART:true-->{status}"
 
         for cmd in previousInputs + [input]:
             window_number, input_type = get_input_parameters_from_glk(windows)
@@ -370,4 +371,5 @@ class RemGlkInterpreter(Interpreter):
         process.send_signal(signal.SIGTERM)
         process.wait()
 
-        return {}, input, get_output_from_remglk_entries(messages, None, windows)
+        output, status = get_output_from_remglk_entries(messages, None, windows)
+        return {}, input, output, status

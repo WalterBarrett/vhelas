@@ -52,3 +52,9 @@ def natural_join(items):
     if len(items) == 2:
         return " and ".join(items)
     return ", ".join(items[:-1]) + ", and " + items[-1]
+
+
+def removeprefix_ci(s: str, prefix: str) -> str:
+    if s.lower().startswith(prefix.lower()):
+        return s[len(prefix):]
+    return s

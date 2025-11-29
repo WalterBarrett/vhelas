@@ -2,6 +2,10 @@ from llama_index.core.llms import ChatMessage
 from pydantic import BaseModel
 
 
+class JsonChatResponse(BaseModel):
+    response: str
+
+
 class ChatRequest(BaseModel):
     model: str
     messages: list[ChatMessage]
