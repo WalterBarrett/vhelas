@@ -13,11 +13,12 @@ from watchdog.observers import Observer
 
 import interpreter as terps
 from config import ReloadHandler, get_config
+from formatting import markdown_to_html, remove_markdown_formatting
 from llm import rewrite_latest_message
 from models import ChatRequest
 from stores import close_stores, get_stores
-from utils import (base64_to_dict, dict_to_base64, fnv1a_64, natural_join,
-                   removeprefix_ci)
+from utils import (append_if_truthy, base64_to_dict, dict_to_base64, fnv1a_64,
+                   natural_join, removeprefix_ci)
 
 config = get_config()
 stores = get_stores()
@@ -130,7 +131,7 @@ def chat_completions(req: ChatRequest, request: Request):
     try:
         messages = req.messages
         last_message = messages[-1] if messages else {}
-        input = last_message.content.strip() if last_message.role == MessageRole.USER else ""
+        input = remove_markdown_formatting(last_message.content.strip()) if last_message.role == MessageRole.USER else ""
         game, save_data, messages, inputs, settings = get_variables_and_messages(messages)
         warnings = []
 
@@ -277,7 +278,8 @@ def list_games():
         name = game_info.get("Name", game_id)
         author = game_info.get("Author", None)
         authors = game_info.get("Authors", [])
-        description = game_info.get("Description", "No description provided.")
+        description = game_info.get("Description", None)
+        description = markdown_to_html(description) if description else "<p>No description provided.</p>"
         cover = game_info.get("Cover", "")
         game_list[game_id] = {
 
@@ -292,11 +294,17 @@ def list_games():
 @app.get("/v1/vhelas/games/{game_id}", tags=["Interactive Fiction Player"])
 def get_game_character_card(game_id: str):
     game_info = config.get_game(game_id)
-    name = game_info.get("Name", game_id).replace("/", "\u2215").replace(":", "\uA789")
+    name = game_info.get("ShortName", game_info.get("Name", game_id)).replace("/", "\u2215").replace(":", "\uA789")
     author = game_info.get("Author", None)
     authors = game_info.get("Authors", [])
-    description = game_info.get("Description", "No description provided.")
-    cover = game_info.get("Cover", "")
+    description = game_info.get("Description", None)
+    description = markdown_to_html(description) if description else "<p>No description provided.</p>"
+    description = f"<h1>{game_info.get('Name', game_id)}</h1>{description}"
+    tags = ["Interactive Fiction"]
+    append_if_truthy(tags, game_info.get("Genre", None))
+    difficulty = game_info.get("Difficulty", None)
+    if difficulty:
+        append_if_truthy(tags, f"{difficulty} Difficulty")
 
     interpreter = config.get_terp(game_info["Interpreter"])
     terp_class = getattr(terps, interpreter["Class"], None)
@@ -306,8 +314,7 @@ def get_game_character_card(game_id: str):
     save_data, _, output, variables = terp_class(interpreter["Path"], game_info["Path"], [], None, interpreter.get("ExtraArgs", None))(None, None)
 
     ret_buffer = [f"<!--GAME:\"{game_id}\"-->"]
-    if variables:
-        ret_buffer.append(variables)
+    append_if_truthy(ret_buffer, variables)
     if save_data:
         ret_buffer.append(f"<!--SAVE:\"{dict_to_base64(save_data)}\"-->")
     ret_buffer.append(output)
@@ -322,16 +329,13 @@ def get_game_character_card(game_id: str):
             "description": "",
             "personality": "",
             "first_mes": first_mes,
-            "avatar": cover,
             "mes_example": "",
             "scenario": "",
             "creator_notes": description,
             "system_prompt": "",
             "post_history_instructions": "",
             "alternate_greetings": [],
-            "tags": [
-                "Interactive Fiction",
-            ],
+            "tags": tags,
             "creator": get_author_line(author, authors),
             "character_version": "main",
             "extensions": {

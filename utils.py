@@ -1,8 +1,14 @@
 import base64
 import json
 import secrets
+from typing import Any
 
 import zstandard
+
+
+def append_if_truthy(list: list[Any], value: Any | None) -> list[Any]:
+    if value:
+        list.append(value)
 
 
 def dict_to_base64(dict_data: dict) -> str:

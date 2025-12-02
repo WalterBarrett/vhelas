@@ -21,7 +21,7 @@ python -m venv venv
 ### Install the preresiquites
 
 ```bash
-pip install llama-index-core llama-index-llms-openai-like fastapi uvicorn watchdog zstandard
+pip install llama-index-core llama-index-llms-openai-like fastapi uvicorn watchdog zstandard mistune
 ```
 
 ### Setting up remglk-terps
@@ -34,4 +34,4 @@ make
 
 ## Licenses
 
-This repository is under [the 3-Clause BSD License](License.md). We utilize libraries with [licenses](LibraryLicenses.md) under a mix of the MIT License (FastAPI, LlamaIndex) and the 3-Clause BSD License (Uvicorn, Zstandard).
+This repository is under [the 3-Clause BSD License](License.md). We utilize libraries with [licenses](LibraryLicenses.md) under a mix of the MIT License (FastAPI, LlamaIndex) and the 3-Clause BSD License (Uvicorn, Mistune, Zstandard).
