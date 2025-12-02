@@ -1,11 +1,12 @@
 import json
+import os
 import re
 import uuid
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from llama_index.core.base.llms.types import MessageRole
 from llama_index.core.llms import ChatMessage
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from watchdog.observers import Observer
 import interpreter as terps
 from config import ReloadHandler, get_config
 from formatting import markdown_to_html, remove_markdown_formatting
+from images import get_mime_type
 from llm import rewrite_latest_message
 from models import ChatRequest
 from stores import close_stores, get_stores
@@ -289,6 +291,17 @@ def list_games():
             "cover": cover,
         }
     return game_list
+
+
+@app.get("/v1/vhelas/games/{game_id}/cover", tags=["Interactive Fiction Player"])
+def get_game_cover(game_id: str):
+    game_info = config.get_game(game_id)
+    cover = game_info.get("Cover", "")
+    if not cover:
+        # TODO: If there isn't a cover, generate a placeholder.
+        raise HTTPException(status_code=404, detail="Cover not available.")
+    if os.path.exists(cover):
+        return FileResponse(cover, media_type=get_mime_type(cover))
 
 
 @app.get("/v1/vhelas/games/{game_id}", tags=["Interactive Fiction Player"])
