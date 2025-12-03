@@ -15,7 +15,7 @@ from watchdog.observers import Observer
 import interpreter as terps
 from config import ReloadHandler, get_config
 from formatting import markdown_to_html, remove_markdown_formatting
-from images import get_mime_type
+from images import get_mime_type, merge_image_and_json
 from llm import rewrite_latest_message
 from models import ChatRequest
 from stores import close_stores, get_stores
@@ -284,7 +284,6 @@ def list_games():
         description = markdown_to_html(description) if description else "<p>No description provided.</p>"
         cover = game_info.get("Cover", "")
         game_list[game_id] = {
-
             "name": name,
             "author": get_author_line(author, authors),
             "description": description,
@@ -304,8 +303,7 @@ def get_game_cover(game_id: str):
         return FileResponse(cover, media_type=get_mime_type(cover))
 
 
-@app.get("/v1/vhelas/games/{game_id}", tags=["Interactive Fiction Player"])
-def get_game_character_card(game_id: str):
+def get_game_character_card_json(game_id: str):
     game_info = config.get_game(game_id)
     name = game_info.get("ShortName", game_info.get("Name", game_id)).replace("/", "\u2215").replace(":", "\uA789")
     author = game_info.get("Author", None)
@@ -357,6 +355,15 @@ def get_game_character_card(game_id: str):
             "character_book": None,
         }
     }
+
+
+@app.get("/v1/vhelas/games/{game_id}", tags=["Interactive Fiction Player"])
+def get_game_character_card(game_id: str):
+    game_info = config.get_game(game_id)
+    portrait = game_info.get("Portrait", game_info.get("Cover", None))
+    if not portrait:
+        return get_game_character_card_json(game_id)
+    return StreamingResponse(merge_image_and_json(portrait, json.dumps(get_game_character_card_json(game_id))), media_type="image/png")
 
 
 if __name__ == "__main__":
