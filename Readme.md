@@ -18,7 +18,7 @@ python -m venv venv
 - **Powershell:** `.\venv\Scripts\Activate.ps1`
 - **Windows Command Prompt:** `venv\Scripts\activate`
 
-### Install the preresiquites
+### Install the prerequisites
 
 ```bash
 pip install llama-index-core llama-index-llms-openai-like fastapi uvicorn watchdog zstandard mistune pillow
