@@ -28,6 +28,7 @@ def decode_with_prefix(data: dict) -> dict:
             try:
                 out[key] = datetime.fromisoformat(v)
             except ValueError:
+                print(f"Error parsing \"{v}\" as a datetime!")
                 out[key] = v
         elif isinstance(v, dict):
             out[k] = decode_with_prefix(v)
