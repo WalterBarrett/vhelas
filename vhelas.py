@@ -128,12 +128,22 @@ rules_based_parser_remaps = {
 }
 
 
+def get_last_nonsystem_message(messages: list):
+    if not messages:
+        return None
+    last_message = None
+    for message in messages:
+        if message.role == MessageRole.USER or message.role == MessageRole.ASSISTANT:
+            last_message = message
+    return last_message
+
+
 @app.post("/v1/chat/completions", tags=["Connection Wrapper"])
 def chat_completions(req: ChatRequest, request: Request):
     try:
         messages = req.messages
-        last_message = messages[-1] if messages else {}
-        input = remove_markdown_formatting(last_message.content.strip()) if last_message.role == MessageRole.USER else ""
+        last_message = get_last_nonsystem_message(messages)
+        input = last_message.content.strip() if (last_message and last_message.role == MessageRole.USER) else ""
         game, save_data, messages, inputs, settings = get_variables_and_messages(messages)
         warnings = []
 
@@ -144,6 +154,7 @@ def chat_completions(req: ChatRequest, request: Request):
             case "disabled":
                 pass
             case "rules":
+                input = remove_markdown_formatting(input)
                 input = parser_strip(removeprefix_ci(input, "i "))
                 input_lower = input.lower()
                 for orig, remap in rules_based_parser_remaps.items():
