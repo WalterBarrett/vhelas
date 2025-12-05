@@ -4,8 +4,10 @@ import re
 import uuid
 from contextlib import asynccontextmanager
 
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from llama_index.core.base.llms.types import MessageRole
 from llama_index.core.llms import ChatMessage
@@ -138,8 +140,57 @@ def get_last_nonsystem_message(messages: list):
     return last_message
 
 
+async def proxy_request(req: ChatRequest, request: Request):
+    reqJson = await request.json()
+    model_info = config.get_model(req.model)
+    req_model = model_info["model"]
+    req_base = model_info["base"]
+    reqJson["model"] = req_model
+    headers = {
+        key: value for key, value in request.headers.items()
+        if key.lower() not in {
+            # RFC 2616 Hop-by-Hop
+            "connection",
+            "keep-alive",
+            "proxy-authenticate",
+            "proxy-authorization",
+            "te",
+            "trailers",
+            "transfer-encoding",
+            "upgrade",
+            # Set by httpx
+            "host",
+            "content-length",
+            # Set below
+            "authorization",
+        }
+    }
+    headers["Authorization"] = f"Bearer {config.get_key(model_info['keychain'])}"
+
+    if reqJson.get("stream", False):
+        async def event_stream():
+            async with httpx.AsyncClient(timeout=None) as client:
+                async with client.stream(
+                    "POST",
+                    f"{req_base}/chat/completions",
+                    headers=headers,
+                    json=reqJson,
+                ) as response:
+                    async for chunk in response.aiter_bytes():
+                        yield chunk
+
+        return StreamingResponse(event_stream(), media_type="text/event-stream")
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            f"{req_base}/chat/completions",
+            headers=headers,
+            json=reqJson,
+        )
+        return resp.json()
+
+
 @app.post("/v1/chat/completions", tags=["Connection Wrapper"])
-def chat_completions(req: ChatRequest, request: Request):
+async def chat_completions(req: ChatRequest, request: Request):
     try:
         messages = req.messages
         last_message = get_last_nonsystem_message(messages)
@@ -148,7 +199,7 @@ def chat_completions(req: ChatRequest, request: Request):
         warnings = []
 
         if game is None:
-            raise Exception("No game is set.")
+            return await proxy_request(req, request)
 
         match settings["parser_augmentation"]:
             case "disabled":
@@ -178,7 +229,7 @@ def chat_completions(req: ChatRequest, request: Request):
                 pass
             case "rewrite":
                 thinking = output
-                output = rewrite_latest_message(output, messages, req.model, req.max_tokens, request)
+                output = await run_in_threadpool(rewrite_latest_message, output, messages, req.model, req.max_tokens, request)
             case _:
                 warnings.append(f"Setting \"output_augmentation\" was set to \"{settings['output_augmentation']}\", which is not yet implemented.")
 
