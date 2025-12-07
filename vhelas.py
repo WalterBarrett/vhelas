@@ -161,6 +161,7 @@ async def proxy_request(req: ChatRequest, request: Request):
             # Set by httpx
             "host",
             "content-length",
+            "accept-encoding",
             # Set below
             "authorization",
         }
